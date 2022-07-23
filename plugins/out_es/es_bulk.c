@@ -23,6 +23,7 @@
 #include <math.h>
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_output_debug_string.h>
 #include "es_bulk.h"
 
 struct es_bulk *es_bulk_create(size_t estimated_size)
@@ -71,6 +72,7 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
 
     required = i_len + j_len + ES_BULK_HEADER + 1;
     available = (bulk->size - bulk->len);
+    flb_output_debug_string("[out_es] es_bulk_append: available=%i required=%i required+i_len=%i", available, required, required + i_len);
 
     if (available < required) {
         /*
@@ -88,9 +90,11 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
                 * ((double)bulk->size / converted_size));       /* = json size / msgpack size */
             append_size = fmax(append_size, remaining_size);
         }
+        flb_output_debug_string("[out_es] es_bulk_append: whole_size=%i converted_size=%i bulk->size=%i append_size=%i", whole_size, converted_size, bulk->size, append_size);
         if (append_size < ES_BULK_CHUNK) {
             /* append at least ES_BULK_CHUNK size */
             append_size = ES_BULK_CHUNK;
+            flb_output_debug_string("[out_es] es_bulk_append: append_size=%i", append_size);
         }
         ptr = flb_realloc(bulk->ptr, bulk->size + append_size);
         if (!ptr) {
@@ -99,6 +103,7 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
         }
         bulk->ptr  = ptr;
         bulk->size += append_size;
+        flb_output_debug_string("[out_es] es_bulk_append: bulk->ptr=0x%p bulk->size=%i (0x%p)", bulk->ptr, bulk->size, bulk->ptr + bulk->size - 1);
     }
 
     memcpy(bulk->ptr + bulk->len, index, i_len);

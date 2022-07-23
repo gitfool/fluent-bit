@@ -61,6 +61,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_output_debug_string.h>
 
 int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                        struct flb_coro *coro)
@@ -88,16 +89,18 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     fd = flb_net_tcp_connect(u->tcp_host, u->tcp_port, u->net.source_address,
                              u->net.connect_timeout, async, coro, u_conn);
     if (fd == -1) {
+        flb_output_debug_string("[flb_io] flb_io_net_connect: flb_net_tcp_connect returned -1");
         return -1;
     }
 
     if (u->proxied_host) {
         ret = flb_http_client_proxy_connect(u_conn);
         if (ret == -1) {
+            flb_output_debug_string("[flb_io] flb_io_net_connect: flb_http_client_proxy_connect returned -1");
             flb_debug("[http_client] flb_http_client_proxy_connect connection #%i failed to %s:%i.",
                       u_conn->fd, u->tcp_host, u->tcp_port);
-          flb_socket_close(fd);
-          return -1;
+            flb_socket_close(fd);
+            return -1;
         }
         flb_debug("[http_client] flb_http_client_proxy_connect connection #%i connected to %s:%i.",
                   u_conn->fd, u->tcp_host, u->tcp_port);
@@ -108,6 +111,7 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     if (u->flags & FLB_IO_TLS) {
         ret = flb_tls_session_create(u->tls, u_conn, coro);
         if (ret != 0) {
+            flb_output_debug_string("[flb_io] flb_io_net_connect: flb_tls_session_create returned %d", ret);
             return -1;
         }
     }

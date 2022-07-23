@@ -28,6 +28,7 @@
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_thread_storage.h>
+#include <fluent-bit/flb_output_debug_string.h>
 
 FLB_TLS_DEFINE(struct mk_list, flb_upstream_list_key);
 
@@ -506,6 +507,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     conn = flb_calloc(1, sizeof(struct flb_upstream_conn));
     if (!conn) {
+        flb_output_debug_string("[flb_upstream] create_conn: flb_calloc returned null");
         flb_errno();
         return NULL;
     }
@@ -559,6 +561,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     /* Start connection */
     ret = flb_io_net_connect(conn, coro);
     if (ret == -1) {
+        flb_output_debug_string("[flb_upstream] create_conn: flb_io_net_connect returned -1");
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
         prepare_destroy_conn_safe(conn);
@@ -648,6 +651,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 
     /* On non Keepalive mode, always create a new TCP connection */
     if (u->net.keepalive == FLB_FALSE) {
+        flb_output_debug_string("[flb_upstream] flb_upstream_conn_get: keepalive disabled (create)");
         return create_conn(u);
     }
 
@@ -676,6 +680,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 
         err = flb_socket_error(conn->fd);
         if (!FLB_EINPROGRESS(err) && err != 0) {
+            flb_output_debug_string("[flb_upstream] flb_upstream_conn_get: flb_socket_error returned %d (#%i) (destroy)", err, conn->fd);
             flb_debug("[upstream] KA connection #%i is in a failed state "
                       "to: %s:%i, cleaning up",
                       conn->fd, u->tcp_host, u->tcp_port);
@@ -702,6 +707,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 
     /* No keepalive connection available, create a new one */
     if (!conn) {
+        flb_output_debug_string("[flb_upstream] flb_upstream_conn_get: no keepalive connections (create)");
         conn = create_conn(u);
     }
 

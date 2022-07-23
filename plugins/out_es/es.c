@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_output_debug_string.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -278,6 +279,7 @@ static int elasticsearch_format(struct flb_config *config,
 
     j_index = flb_sds_create_size(ES_BULK_HEADER);
     if (j_index == NULL) {
+        flb_output_debug_string("[out_es] elasticsearch_format: flb_sds_create_size returned null");
         flb_errno();
         return -1;
     }
@@ -288,6 +290,7 @@ static int elasticsearch_format(struct flb_config *config,
     /* Perform some format validation */
     ret = msgpack_unpack_next(&result, data, bytes, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_output_debug_string("[out_es] elasticsearch_format: msgpack_unpack_next returned %i", ret);
         msgpack_unpacked_destroy(&result);
         flb_sds_destroy(j_index);
         return -1;
@@ -299,6 +302,7 @@ static int elasticsearch_format(struct flb_config *config,
          * If we got a different format, we assume the caller knows what he is
          * doing, we just duplicate the content in a new buffer and cleanup.
          */
+        flb_output_debug_string("[out_es] elasticsearch_format: msgpack_unpack_next result.data.type=%i", result.data.type);
         msgpack_unpacked_destroy(&result);
         flb_sds_destroy(j_index);
         return -1;
@@ -306,6 +310,7 @@ static int elasticsearch_format(struct flb_config *config,
 
     root = result.data;
     if (root.via.array.size == 0) {
+        flb_output_debug_string("[out_es] elasticsearch_format: msgpack_unpack_next root.via.array.size=0");
         msgpack_unpacked_destroy(&result);
         flb_sds_destroy(j_index);
         return -1;
@@ -314,6 +319,7 @@ static int elasticsearch_format(struct flb_config *config,
     /* Create the bulk composer */
     bulk = es_bulk_create(bytes);
     if (!bulk) {
+        flb_output_debug_string("[out_es] elasticsearch_format: es_bulk_create returned null");
         msgpack_unpacked_destroy(&result);
         flb_sds_destroy(j_index);
         return -1;
@@ -372,12 +378,14 @@ static int elasticsearch_format(struct flb_config *config,
     /* Iterate each record and do further formatting */
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            flb_output_debug_string("[out_es] elasticsearch_format: msgpack_unpack_next result.data.type=%i (continue)", result.data.type);
             continue;
         }
 
         /* Each array must have two entries: time and record */
         root = result.data;
         if (root.via.array.size != 2) {
+            flb_output_debug_string("[out_es] elasticsearch_format: msgpack_unpack_next root.via.array.size=%i (continue)", root.via.array.size);
             continue;
         }
 
@@ -497,6 +505,7 @@ static int elasticsearch_format(struct flb_config *config,
          */
         ret = es_pack_map_content(&tmp_pck, map, ctx);
         if (ret == -1) {
+            flb_output_debug_string("[out_es] elasticsearch_format: es_pack_map_content returned -1");
             msgpack_unpacked_destroy(&result);
             msgpack_sbuffer_destroy(&tmp_sbuf);
             es_bulk_destroy(bulk);
@@ -551,6 +560,7 @@ static int elasticsearch_format(struct flb_config *config,
         out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
         if (!out_buf) {
+            flb_output_debug_string("[out_es] elasticsearch_format: flb_msgpack_raw_to_json_sds returned null");
             msgpack_unpacked_destroy(&result);
             es_bulk_destroy(bulk);
             flb_sds_destroy(j_index);
@@ -579,6 +589,7 @@ static int elasticsearch_format(struct flb_config *config,
         off_prev = off;
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
+            flb_output_debug_string("[out_es] elasticsearch_format: es_bulk_append returned -1");
             msgpack_unpacked_destroy(&result);
             *out_size = 0;
             es_bulk_destroy(bulk);
@@ -804,6 +815,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
+        flb_output_debug_string("[out_es] cb_es_flush: flb_upstream_conn_get returned null (retry)");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -814,6 +826,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                                event_chunk->data, event_chunk->size,
                                &out_buf, &out_size);
     if (ret != 0) {
+        flb_output_debug_string("[out_es] cb_es_flush: elasticsearch_format returned %i (error)", ret);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -844,6 +857,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     if (ctx->has_aws_auth == FLB_TRUE) {
         signature = add_aws_auth(c, ctx);
         if (!signature) {
+            flb_output_debug_string("[out_es] cb_es_flush: add_aws_auth returned null (retry)");
             goto retry;
         }
     }
@@ -857,6 +871,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
+        flb_output_debug_string("[out_es] cb_es_flush: flb_http_do returned %i (retry)", ret);
         flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
         goto retry;
     }
@@ -864,6 +879,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         /* The request was issued successfully, validate the 'error' field */
         flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
         if (c->resp.status != 200 && c->resp.status != 201) {
+            flb_output_debug_string("[out_es] cb_es_flush: flb_http_client->resp.status=%i (retry)", c->resp.status);
             if (c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
                               c->resp.status, ctx->uri, c->resp.payload);
@@ -882,6 +898,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
              */
             ret = elasticsearch_error_check(ctx, c);
             if (ret == FLB_TRUE) {
+                flb_output_debug_string("[out_es] cb_es_flush: elasticsearch_error_check returned true (retry)");
                 /* we got an error */
                 if (ctx->trace_error) {
                     /*
@@ -913,11 +930,13 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
             }
         }
         else {
+            flb_output_debug_string("[out_es] cb_es_flush: flb_http_client->resp.payload_size=0 (retry)");
             goto retry;
         }
     }
 
     /* Cleanup */
+    flb_output_debug_string("[out_es] cb_es_flush: done (okay)");
     flb_http_client_destroy(c);
     flb_free(pack);
     flb_upstream_conn_release(u_conn);
@@ -1150,7 +1169,7 @@ struct flb_output_plugin out_es_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_es_flush,
     .cb_exit        = cb_es_exit,
-    .workers        = 2,
+    .workers        = 1,
 
     /* Configuration */
     .config_map     = config_map,

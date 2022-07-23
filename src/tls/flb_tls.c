@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_output_debug_string.h>
 
 #ifdef FLB_HAVE_OPENSSL
 #include "openssl.c"
@@ -214,7 +215,7 @@ int flb_tls_net_read_async(struct flb_coro *co, struct flb_upstream_conn *u_conn
 
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
-        
+
         goto retry_read;
     }
     else
@@ -333,6 +334,7 @@ int flb_tls_session_create(struct flb_tls *tls,
     /* Create TLS session */
     session = tls->api->session_create(tls, u_conn);
     if (!session) {
+        flb_output_debug_string("[flb_tls] flb_tls_session_create: flb_tls->api->session_create returned null");
         flb_error("[tls] could not create TLS session for %s:%i",
                   u->tcp_host, u->tcp_port);
         return -1;
@@ -354,6 +356,7 @@ int flb_tls_session_create(struct flb_tls *tls,
     ret = tls->api->net_handshake(tls, session);
     if (ret != 0) {
         if (ret != FLB_TLS_WANT_READ && ret != FLB_TLS_WANT_WRITE) {
+            flb_output_debug_string("[flb_tls] flb_tls_session_create: flb_tls->api->net_handshake returned %i", ret);
             goto error;
         }
 
@@ -381,6 +384,7 @@ int flb_tls_session_create(struct flb_tls *tls,
             if (u->net.connect_timeout > 0 &&
                 u_conn->ts_connect_timeout > 0 &&
                 u_conn->ts_connect_timeout <= time(NULL)) {
+                flb_output_debug_string("[flb_tls] flb_tls_session_create: timed out after %i seconds", u->net.connect_timeout);
                 flb_error("[io_tls] handshake connection #%i to %s:%i timed out after "
                           "%i seconds",
                           u_conn->fd,
@@ -402,6 +406,7 @@ int flb_tls_session_create(struct flb_tls *tls,
                            flag, &u_conn->event);
         u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
+            flb_output_debug_string("[flb_tls] flb_tls_session_create: mk_event_add returned -1");
             goto error;
         }
 
